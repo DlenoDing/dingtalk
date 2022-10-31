@@ -6,9 +6,8 @@ use Dleno\CommonCore\Tools\Server;
 use GuzzleHttp\Client;
 use Hyperf\Context\Context;
 use Hyperf\Contract\StdoutLoggerInterface;
-use Hyperf\Di\Annotation\Inject;
 use Hyperf\HttpServer\Contract\RequestInterface;
-use Hyperf\Redis\Redis;
+use Hyperf\Redis\RedisFactory;
 use Hyperf\Utils\ApplicationContext;
 use Hyperf\Utils\Coroutine;
 use Hyperf\WebSocketServer\Context as WsContext;
@@ -27,11 +26,6 @@ class Robot
 
     const MSG_TYPE_NOTICE    = 1;
     const MSG_TYPE_EXCEPTION = 2;
-    /**
-     * @Inject()
-     * @var Redis
-     */
-    public $redis;
 
     /**
      * @var string
@@ -194,11 +188,12 @@ class Robot
         if ($this->frequencyMsg <= 0) {
             return true;
         }
+        $redis = get_inject_obj(RedisFactory::class)->get(config('dingtalk.redis', 'default'));
         $cacheKey = $this->getFrequencyMsgCacheKey($msg);
-        if ($this->redis->exists($cacheKey)) {
+        if ($redis->exists($cacheKey)) {
             return false;
         }
-        $this->redis->set($cacheKey, '1', $this->frequencyMsg);
+        $redis->set($cacheKey, '1', $this->frequencyMsg);
         return true;
     }
 
@@ -503,10 +498,11 @@ class Robot
      */
     protected function checkFrequencyRobot($robot)
     {
+        $redis = get_inject_obj(RedisFactory::class)->get(config('dingtalk.redis', 'default'));
         $cacheKey = $this->getFrequencyRobotCacheKey($robot);
-        $thisNum  = $this->redis->incr($cacheKey);
+        $thisNum  = $redis->incr($cacheKey);
         if ($thisNum <= 1) {
-            $this->redis->expire($cacheKey, 60);
+            $redis->expire($cacheKey, 60);
         }
         if ($thisNum > $this->frequencyRobot) {
             return false;
