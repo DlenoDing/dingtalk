@@ -20,6 +20,13 @@ use Psr\Http\Message\ServerRequestInterface;
  */
 class Robot
 {
+    //相同消息频率限制
+    const FREQUENCY_MSG_CACHE_KEY = 'DING_TALK:FREQUENCY:MSG:';
+    //同机器人频率限制
+    const FREQUENCY_ROBOT_CACHE_KEY = 'DING_TALK:FREQUENCY:ROBOT:';
+
+    const MSG_TYPE_NOTICE    = 1;
+    const MSG_TYPE_EXCEPTION = 2;
     /**
      * @Inject()
      * @var Redis
@@ -76,12 +83,6 @@ class Robot
      * @var int
      */
     protected $frequencyMsg;
-
-    //相同消息频率限制
-    const FREQUENCY_MSG_CACHE_KEY = 'DING_TALK:FREQUENCY:MSG:';
-    //同机器人频率限制
-    const FREQUENCY_ROBOT_CACHE_KEY = 'DING_TALK:FREQUENCY:ROBOT:';
-
 
     /**
      * construct
@@ -261,7 +262,8 @@ class Robot
                 ['请求追踪' => $traceId . "($ip)"],
                 ['消息时间' => date('Y-m-d H:i:s')],
                 ['消息内容' => $notice],
-            ]
+            ],
+            self::MSG_TYPE_NOTICE
         );
     }
 
@@ -336,7 +338,7 @@ class Robot
             ];
         }
 
-        return $this->formatMessage($messageBody);
+        return $this->formatMessage($messageBody, self::MSG_TYPE_EXCEPTION);
     }
 
     /**
@@ -387,12 +389,18 @@ class Robot
      * @param array $messageBody
      * @return string
      */
-    protected function formatMessage(array $messageBody)
+    protected function formatMessage(array $messageBody, $msgType)
     {
+        $i           = 0;
         $messageBody = array_walk(
             $messageBody,
-            function (&$val, $key) {
-                $val = sprintf('- %s: %s> %s', $key, PHP_EOL, $val);
+            function (&$val, $key) use ($i, $msgType) {
+                if ($i <= 0) {
+                    $color = $msgType == self::MSG_TYPE_EXCEPTION ? 'f00' : '00f';
+                    $val   = sprintf('### <font color=#' . $color . '>%s::</font> %s> %s', $key, PHP_EOL, $val);
+                } else {
+                    $val = sprintf('- %s: %s> %s', $key, PHP_EOL, $val);
+                }
             }
         );
 
@@ -427,9 +435,11 @@ class Robot
      */
     protected function sendMessage(array $msg)
     {
-        $this->goRun(function () use ($msg) {
-            $this->__sendMessage($msg);
-        });
+        $this->goRun(
+            function () use ($msg) {
+                $this->__sendMessage($msg);
+            }
+        );
         return true;
     }
 
@@ -441,10 +451,12 @@ class Robot
         $config = $this->getConfig();
         if (empty($config)) {
             //所有机器人都满了则延迟发送
-            $this->goRun(function () use ($msg) {
-                sleep(60);
-                $this->__sendMessage($msg);
-            });
+            $this->goRun(
+                function () use ($msg) {
+                    sleep(60);
+                    $this->__sendMessage($msg);
+                }
+            );
             return;
         }
         $timestamp = (string)(time() * 1000);
