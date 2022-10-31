@@ -12,7 +12,7 @@ use Hyperf\Utils\Str;
  *
  * Class Bot
  */
-abstract class Bot
+abstract class BaseBot
 {
     /**
      * @var array
@@ -57,7 +57,6 @@ abstract class Bot
 
     /**
      * @return mixed
-     * @throws \Exception
      */
     protected function getTheExactCore()
     {

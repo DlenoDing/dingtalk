@@ -6,7 +6,9 @@ use Dleno\CommonCore\Tools\Server;
 use GuzzleHttp\Client;
 use Hyperf\Context\Context;
 use Hyperf\Contract\StdoutLoggerInterface;
+use Hyperf\Di\Annotation\Inject;
 use Hyperf\HttpServer\Contract\RequestInterface;
+use Hyperf\Redis\Redis;
 use Hyperf\Utils\ApplicationContext;
 use Hyperf\Utils\Coroutine;
 use Hyperf\WebSocketServer\Context as WsContext;
@@ -18,6 +20,12 @@ use Psr\Http\Message\ServerRequestInterface;
  */
 class Robot
 {
+    /**
+     * @Inject()
+     * @var Redis
+     */
+    public $redis;
+
     /**
      * @var string
      */
@@ -47,6 +55,11 @@ class Robot
     protected $client;
 
     /**
+     * @var StdoutLoggerInterface
+     */
+    protected $logger;
+
+    /**
      * 是否启用
      * @var bool
      */
@@ -64,19 +77,32 @@ class Robot
      */
     protected $frequencyMsg;
 
-    protected static $frequencyMsgTimes = [];
+    //相同消息频率限制
+    const FREQUENCY_MSG_CACHE_KEY = 'DING_TALK:FREQUENCY:MSG:';
+    //同机器人频率限制
+    const FREQUENCY_ROBOT_CACHE_KEY = 'DING_TALK:FREQUENCY:ROBOT:';
+
 
     /**
      * construct
      * @param string $configName
-     * @param array|null $config
      */
-    public function __construct($configName, array $config = null)
+    public function __construct($configName)
     {
         $this->configName = $configName;
+
+        $config = config('dingtalk.configs.' . $configName);
         if (empty($config)) {
-            $config = config('dingtalk.configs.' . $configName);
+            $this->logger->error(sprintf('[%s] dingtalk no config', $configName));
+            $config = [
+                'enable'    => false,
+                'name'      => 'Robot',
+                'frequency' => 0,
+                'token'     => '',
+                'secret'    => '',
+            ];
         }
+
         if (!isset($config['configs'])) {
             $config['configs'][] = [
                 'token'  => $config['token'],
@@ -84,32 +110,26 @@ class Robot
             ];
             unset($config['token'], $config['secret']);
         }
+        if (!$config['enable']) {
+            $this->logger->error(sprintf('[%s] dingtalk is not enable', $configName));
+        }
         $this->enable       = $config['enable'] ? true : false;
         $this->name         = $config['name'];
         $this->frequencyMsg = $config['frequency'];
         $this->configs      = $config['configs'];
         $this->client       = new Client();
+        $this->logger       = ApplicationContext::getContainer()
+                                                ->get(StdoutLoggerInterface::class);
     }
 
     /**
-     * @param string $botName
-     * @param array $parameters
+     * @param string $configName
      * @return Robot
-     * @throws \Exception
      */
     public static function get(string $configName = null)
     {
         $configName = $configName ?: 'default';
-        $config     = config('dingtalk.configs.' . $configName);
-        if (empty($config)) {
-            throw new \Exception(sprintf('[%s] dingtalk no config', $configName));
-        }
-
-        if (!$config['enable']) {
-            throw new \Exception(sprintf('[%s] dingtalk is not enable', $configName));
-        }
-
-        return make(Robot::class, ['configName' => $configName, 'config' => $config]);
+        return make(Robot::class, ['configName' => $configName]);
     }
 
     /**
@@ -118,7 +138,7 @@ class Robot
      */
     public function text(string $text)
     {
-        if ($this->checkFrequency($text)) {
+        if ($this->checkFrequencyMsg($text)) {
             return $this->ding('Text', 'text', $text);
         }
         return false;
@@ -130,7 +150,7 @@ class Robot
      */
     public function markdown(string $markdown)
     {
-        if ($this->checkFrequency($markdown)) {
+        if ($this->checkFrequencyMsg($markdown)) {
             return $this->ding('Markdown', 'markdown', $markdown);
         }
         return false;
@@ -142,7 +162,7 @@ class Robot
      */
     public function notice(string $notice)
     {
-        if ($this->checkFrequency($notice)) {
+        if ($this->checkFrequencyMsg($notice)) {
             return $this->ding('Notice', 'markdown', $this->formatNotice($notice));
         }
         return false;
@@ -154,7 +174,7 @@ class Robot
      */
     public function exception(\Throwable $e)
     {
-        if ($this->checkFrequency($e->getMessage())) {
+        if ($this->checkFrequencyMsg($e->getMessage())) {
             return $this->ding('Exception', 'markdown', $this->formatException($e));
         }
         return false;
@@ -165,44 +185,25 @@ class Robot
      * @param $msg
      * @return bool
      */
-    protected function checkFrequency($msg)
+    protected function checkFrequencyMsg($msg)
     {
+        if (!$this->enable) {
+            return false;
+        }
         if ($this->frequencyMsg <= 0) {
             return true;
         }
-        $msg = md5($msg);
-        if (isset(self::$frequencyMsgTimes[$this->configName]) && isset(self::$frequencyMsgTimes[$this->configName][$msg])) {
-            if (time() - self::$frequencyMsgTimes[$this->configName][$msg] < $this->frequencyMsg) {
-                return false;
-            }
+        $cacheKey = $this->getFrequencyMsgCacheKey($msg);
+        if ($this->redis->exists($cacheKey)) {
+            return false;
         }
-        if (!Coroutine::inCoroutine()) {
-            run(
-                function () {
-                    $this->clearFrequencyMsgTimes();
-                }
-            );
-        } else {
-            go(
-                function () {
-                    $this->clearFrequencyMsgTimes();
-                }
-            );
-        }
-        self::$frequencyMsgTimes[$this->configName][$msg] = time();
+        $this->redis->set($cacheKey, '1', $this->frequencyMsg);
         return true;
     }
 
-    protected function clearFrequencyMsgTimes()
+    protected function getFrequencyMsgCacheKey($msg)
     {
-        if (!isset(self::$frequencyMsgTimes[$this->configName])) {
-            return;
-        }
-        foreach (self::$frequencyMsgTimes[$this->configName] as $k => $frequencyMsgTime) {
-            if (time() - $frequencyMsgTime >= 0) {
-                unset(self::$frequencyMsgTimes[$this->configName][$k]);
-            }
-        }
+        return self::FREQUENCY_MSG_CACHE_KEY . $this->configName . ':' . md5($msg);
     }
 
     /**
@@ -407,13 +408,9 @@ class Robot
      */
     protected function ding(string $title, string $type, string $content, string $contentType = 'content')
     {
-        if (!$this->enable) {
-            return false;
-        }
         if ($type === 'markdown') {
             $contentType = 'text';
         }
-
         return $this->sendMessage(
             [
                 'msgtype' => $type,
@@ -430,19 +427,9 @@ class Robot
      */
     protected function sendMessage(array $msg)
     {
-        if (!Coroutine::inCoroutine()) {
-            run(
-                function () use ($msg) {
-                    $this->__sendMessage($msg);
-                }
-            );
-        } else {
-            go(
-                function () use ($msg) {
-                    $this->__sendMessage($msg);
-                }
-            );
-        }
+        $this->goRun(function () use ($msg) {
+            $this->__sendMessage($msg);
+        });
         return true;
     }
 
@@ -451,9 +438,15 @@ class Robot
      */
     protected function __sendMessage(array $msg)
     {
-        $configs = $this->configs;
-        shuffle($configs);
-        $config    = current($configs);
+        $config = $this->getConfig();
+        if (empty($config)) {
+            //所有机器人都满了则延迟发送
+            $this->goRun(function () use ($msg) {
+                sleep(60);
+                $this->__sendMessage($msg);
+            });
+            return;
+        }
         $timestamp = (string)(time() * 1000);
         $secret    = $config['secret'];
         $token     = $config['token'];
@@ -461,9 +454,57 @@ class Robot
         $response  = $this->client->post(sprintf($this->gateway, $token, $timestamp, $sign), ['json' => $msg]);
         $result    = json_decode($response->getBody(), true);
         if (!isset($result['errcode']) || $result['errcode']) {
-            $logger = ApplicationContext::getContainer()
-                                        ->get(StdoutLoggerInterface::class);
-            $logger->error('DingTalk Send Fail:' . array_to_json($result));
+            $this->logger->error('DingTalk Send Fail:' . array_to_json($result));
         }
+    }
+
+    /**
+     * @param array|callable $callbacks
+     */
+    private function goRun($callbacks)
+    {
+        if (!Coroutine::inCoroutine()) {
+            run($callbacks);
+        } else {
+            go($callbacks);
+        }
+    }
+
+    protected function getConfig()
+    {
+        $configs = $this->configs;
+        shuffle($configs);
+        foreach ($configs as $config) {
+            if (!$this->checkFrequencyRobot($config['token'])) {
+                continue;
+            }
+            return $config;
+        }
+
+        return [];
+    }
+
+    /**
+     * 当机器人消息频率检查
+     * @param $robot
+     * @return bool
+     */
+    protected function checkFrequencyRobot($robot)
+    {
+        $cacheKey = $this->getFrequencyRobotCacheKey($robot);
+        $thisNum  = $this->redis->incr($cacheKey);
+        if ($thisNum <= 1) {
+            $this->redis->expire($cacheKey, 60);
+        }
+        if ($thisNum > $this->frequencyRobot) {
+            return false;
+        }
+
+        return true;
+    }
+
+    protected function getFrequencyRobotCacheKey($robot)
+    {
+        return self::FREQUENCY_ROBOT_CACHE_KEY . $robot;
     }
 }
