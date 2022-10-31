@@ -2,8 +2,9 @@
 
 namespace Dleno\DingTalk;
 
+use Dleno\CommonCore\Tools\Client;
 use Dleno\CommonCore\Tools\Server;
-use GuzzleHttp\Client;
+use GuzzleHttp\Client as HttpClient;
 use Hyperf\Context\Context;
 use Hyperf\Contract\StdoutLoggerInterface;
 use Hyperf\HttpServer\Contract\RequestInterface;
@@ -84,6 +85,9 @@ class Robot
      */
     public function __construct($configName)
     {
+        $this->logger = ApplicationContext::getContainer()
+                                          ->get(StdoutLoggerInterface::class);
+
         $this->configName = $configName;
 
         $config = config('dingtalk.configs.' . $configName);
@@ -112,9 +116,7 @@ class Robot
         $this->name         = $config['name'];
         $this->frequencyMsg = $config['frequency'];
         $this->configs      = $config['configs'];
-        $this->client       = new Client();
-        $this->logger       = ApplicationContext::getContainer()
-                                                ->get(StdoutLoggerInterface::class);
+        $this->client       = new HttpClient();
     }
 
     /**
@@ -188,7 +190,7 @@ class Robot
         if ($this->frequencyMsg <= 0) {
             return true;
         }
-        $redis = get_inject_obj(RedisFactory::class)->get(config('dingtalk.redis', 'default'));
+        $redis    = get_inject_obj(RedisFactory::class)->get(config('dingtalk.redis', 'default'));
         $cacheKey = $this->getFrequencyMsgCacheKey($msg);
         if ($redis->exists($cacheKey)) {
             return false;
@@ -208,12 +210,6 @@ class Robot
      */
     protected function formatNotice(string $notice)
     {
-        if (class_exists(\Dleno\CommonCore\Tools\Client::class)) {
-            $ip = \Dleno\CommonCore\Tools\Client::getIP();
-        } else {
-            $ip = '';
-        }
-
         // 兼容本地进程执行的情况
         if (Context::has(ServerRequestInterface::class)) {
             $request = ApplicationContext::getContainer()
@@ -232,31 +228,21 @@ class Robot
         } else {
             $requestUrl = $request->getUri();
             $method     = $request->getMethod();
-            /** @noinspection JsonEncodingApiUsageInspection */
-            $params  = json_encode($request->all());
-            $headers = $this->getHeader($request);
-            $headers = json_encode($headers);
-        }
-
-        $hostName = gethostname();
-        $env      = config('app_env');
-
-        if (class_exists(Server::class)) {
-            $traceId = Server::getTraceId();
-        } else {
-            $traceId = null;
+            $params     = json_encode($request->all());
+            $headers    = $this->getHeader($request);
+            $headers    = json_encode($headers);
         }
 
         return $this->formatMessage(
             [
-                ['通知消息' => "[{$this->name}]-[{$env}]"],
-                ['主机名称' => $hostName],
-                ['请求地址' => "[$method]" . $requestUrl],
-                ['请求头部' => $headers],
-                ['请求参数' => $params],
-                ['请求追踪' => $traceId . "($ip)"],
-                ['消息时间' => date('Y-m-d H:i:s')],
-                ['消息内容' => $notice],
+                '通知消息' => config('app_name') . "({$this->name})-[" . config('app_env') . "]",
+                '主机地址' => Server::getIpAddr(),
+                '请求地址' => "[$method]" . $requestUrl,
+                '请求头部' => $headers,
+                '请求参数' => $params,
+                '请求追踪' => Server::getTraceId() . "(" . Client::getIP() . ")",
+                '消息时间' => date('Y-m-d H:i:s'),
+                '消息内容' => $notice,
             ],
             self::MSG_TYPE_NOTICE
         );
@@ -268,16 +254,9 @@ class Robot
      */
     protected function formatException(\Throwable $exception)
     {
-        $class   = get_class($exception);
         $message = $exception->getMessage();
         $file    = $exception->getFile();
         $line    = $exception->getLine();
-
-        if (class_exists(\Dleno\CommonCore\Tools\Client::class)) {
-            $ip = \Dleno\CommonCore\Tools\Client::getIP();
-        } else {
-            $ip = null;
-        }
 
         //兼容 HTTP/WS/LOCAL
         if (Context::has(ServerRequestInterface::class)) {
@@ -297,40 +276,30 @@ class Robot
         } else {
             $requestUrl = $request->getUri();
             $method     = $request->getMethod();
-            /** @noinspection JsonEncodingApiUsageInspection */
-            $params  = json_encode($request->all());
-            $headers = $this->getHeader($request);
-            $headers = json_encode($headers);
-        }
-
-        $hostName = gethostname();
-        $env      = config('app_env');
-
-        if (class_exists(Server::class)) {
-            $traceId = Server::getTraceId();
-        } else {
-            $traceId = null;
+            $params     = json_encode($request->all());
+            $headers    = $this->getHeader($request);
+            $headers    = json_encode($headers);
         }
 
         $messageBody = [
-            ['异常消息' => "[{$this->name}]-[{$env}]"],
-            ['主机名称' => $hostName],
-            ['请求地址' => "[$method]" . $requestUrl],
-            ['请求头部' => $headers],
-            ['请求参数' => $params],
-            ['请求追踪' => $traceId . "($ip)"],
-            ['异常时间' => date('Y-m-d H:i:s')],
-            ['异常类名' => $class],
-            ['异常描述' => $message],
-            ['参考位置' => sprintf('%s:%d', str_replace([BASE_PATH, '\\'], ['', '/'], $file), $line)],
+            '异常消息' => config('app_name') . "({$this->name})-[" . config('app_env') . "]",
+            '主机地址' => Server::getIpAddr(),
+            '请求地址' => "[$method]" . $requestUrl,
+            '请求头部' => $headers,
+            '请求参数' => $params,
+            '请求追踪' => Server::getTraceId() . "(" . Client::getIP() . ")",
+            '异常时间' => date('Y-m-d H:i:s'),
+            '异常类名' => get_class($exception),
+            '异常描述' => $message,
+            '参考位置' => sprintf('%s:%d', str_replace([BASE_PATH, '\\'], ['', '/'], $file), $line),
         ];
 
-        $explode = explode("\n", $exception->getTraceAsString());
-        array_unshift($explode, '');
-        if ($explode) {
-            $messageBody[] = [
-                '堆栈信息' => PHP_EOL . '>' . implode(PHP_EOL . '> - ', $explode),
-            ];
+        $trace = $exception->getTraceAsString();
+        $trace = str_replace([BASE_PATH, '\\'], ['', '/'], $trace);
+        $trace = explode("\n", $trace);
+        array_unshift($trace, '');
+        if ($trace) {
+            $messageBody['堆栈信息'] = PHP_EOL . '>' . implode(PHP_EOL . '> - ', $trace);
         }
 
         return $this->formatMessage($messageBody, self::MSG_TYPE_EXCEPTION);
@@ -384,18 +353,19 @@ class Robot
      * @param array $messageBody
      * @return string
      */
-    protected function formatMessage(array $messageBody, $msgType)
+    protected function formatMessage(array $messageBody, $msgType = self::MSG_TYPE_NOTICE)
     {
-        $i           = 0;
-        $messageBody = array_walk(
+        $i = 0;
+        array_walk(
             $messageBody,
-            function (&$val, $key) use ($i, $msgType) {
+            function (&$val, $key) use (&$i, $msgType) {
                 if ($i <= 0) {
                     $color = $msgType == self::MSG_TYPE_EXCEPTION ? 'f00' : '00f';
-                    $val   = sprintf('### <font color=#' . $color . '>%s::</font> %s> %s', $key, PHP_EOL, $val);
+                    $val   = sprintf('#### **<font color=#' . $color . '>%s::</font>** %s> **%s**', $key, PHP_EOL, $val);
                 } else {
                     $val = sprintf('- %s: %s> %s', $key, PHP_EOL, $val);
                 }
+                $i++;
             }
         );
 
@@ -498,7 +468,7 @@ class Robot
      */
     protected function checkFrequencyRobot($robot)
     {
-        $redis = get_inject_obj(RedisFactory::class)->get(config('dingtalk.redis', 'default'));
+        $redis    = get_inject_obj(RedisFactory::class)->get(config('dingtalk.redis', 'default'));
         $cacheKey = $this->getFrequencyRobotCacheKey($robot);
         $thisNum  = $redis->incr($cacheKey);
         if ($thisNum <= 1) {
