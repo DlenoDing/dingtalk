@@ -223,11 +223,9 @@ class Robot
             $request = null;
         }
 
+        $isLocal = false;
         if (is_null($request)) {
-            $requestUrl = 'local';
-            $method     = 'local';
-            $params     = 'local';
-            $headers    = 'local';
+            $isLocal = true;
         } else {
             $requestUrl = $request->getUri();
             $method     = $request->getMethod();
@@ -235,21 +233,20 @@ class Robot
             $headers    = $this->getHeader($request);
             $headers    = json_encode($headers);
         }
+        $messageBody = [];
+        $messageBody['通知消息'] = config('app_name') . "({$this->name})-[" . config('app_env') . "]";
+        $messageBody['主机地址'] = Server::getIpAddr().($isLocal?'(LOCAL)':'(REQUEST)');
+        if (!$isLocal) {
+            $messageBody['请求地址'] = "[$method]" . $requestUrl;
+            $messageBody['请求头部'] = $headers;
+            $messageBody['请求参数'] = $params;
+            $messageBody['请求追踪'] = Server::getTraceId() . "(" . Client::getIP() . ")";
+        }
+        $messageBody['消息时间'] = date('Y-m-d H:i:s');
+        $messageBody['消息内容'] = $notice;
+        $messageBody['数据内容'] = array_to_json($data);
 
-        return $this->formatMessage(
-            [
-                '通知消息' => config('app_name') . "({$this->name})-[" . config('app_env') . "]",
-                '主机地址' => Server::getIpAddr(),
-                '请求地址' => "[$method]" . $requestUrl,
-                '请求头部' => $headers,
-                '请求参数' => $params,
-                '请求追踪' => Server::getTraceId() . "(" . Client::getIP() . ")",
-                '消息时间' => date('Y-m-d H:i:s'),
-                '消息内容' => $notice,
-                '数据内容' => array_to_json($data),
-            ],
-            self::MSG_TYPE_NOTICE
-        );
+        return $this->formatMessage($messageBody, self::MSG_TYPE_NOTICE);
     }
 
     /**
@@ -273,11 +270,9 @@ class Robot
             $request = null;
         }
 
+        $isLocal = false;
         if (is_null($request)) {
-            $requestUrl = 'local';
-            $method     = 'local';
-            $params     = 'local';
-            $headers    = 'local';
+            $isLocal = true;
         } else {
             $requestUrl = $request->getUri();
             $method     = $request->getMethod();
@@ -286,19 +281,20 @@ class Robot
             $headers    = json_encode($headers);
         }
 
-        $messageBody = [
-            '异常消息' => config('app_name') . "({$this->name})-[" . config('app_env') . "]",
-            '主机地址' => Server::getIpAddr(),
-            '请求地址' => "[$method]" . $requestUrl,
-            '请求头部' => $headers,
-            '请求参数' => $params,
-            '请求追踪' => Server::getTraceId() . "(" . Client::getIP() . ")",
-            '异常时间' => date('Y-m-d H:i:s'),
-            '异常类名' => get_class($exception),
-            '异常描述' => $message,
-            '参考位置' => sprintf('%s:%d', str_replace([BASE_PATH, '\\'], ['', '/'], $file), $line),
-            '数据内容' => array_to_json($data),
-        ];
+        $messageBody = [];
+        $messageBody['异常消息'] = config('app_name') . "({$this->name})-[" . config('app_env') . "]";
+        $messageBody['主机地址'] = Server::getIpAddr().($isLocal?'(LOCAL)':'(REQUEST)');
+        if (!$isLocal) {
+            $messageBody['请求地址'] = "[$method]" . $requestUrl;
+            $messageBody['请求头部'] = $headers;
+            $messageBody['请求参数'] = $params;
+            $messageBody['请求追踪'] = Server::getTraceId() . "(" . Client::getIP() . ")";
+        }
+        $messageBody['异常时间'] = date('Y-m-d H:i:s');
+        $messageBody['异常类名'] = get_class($exception);
+        $messageBody['异常描述'] = $message;
+        $messageBody['异常位置'] = sprintf('%s:%d', str_replace([BASE_PATH, '\\'], ['', '/'], $file), $line);
+        $messageBody['数据内容'] = array_to_json($data);
 
         $trace = $exception->getTraceAsString();
         $trace = str_replace([BASE_PATH, '\\'], ['', '/'], $trace);
