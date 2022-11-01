@@ -155,24 +155,26 @@ class Robot
 
     /**
      * @param string $notice
+     * @param array $data
      * @return bool
      */
-    public function notice(string $notice)
+    public function notice(string $notice, $data = [])
     {
         if ($this->checkFrequencyMsg($notice)) {
-            return $this->ding('Notice', 'markdown', $this->formatNotice($notice));
+            return $this->ding('Notice', 'markdown', $this->formatNotice($notice, $data));
         }
         return false;
     }
 
     /**
      * @param \Throwable $e
+     * @param array $data
      * @return bool
      */
-    public function exception(\Throwable $e)
+    public function exception(\Throwable $e, $data = [])
     {
         if ($this->checkFrequencyMsg($e->getMessage())) {
-            return $this->ding('Exception', 'markdown', $this->formatException($e));
+            return $this->ding('Exception', 'markdown', $this->formatException($e, $data));
         }
         return false;
     }
@@ -206,9 +208,10 @@ class Robot
 
     /**
      * @param string $notice
+     * @param array $data
      * @return string
      */
-    protected function formatNotice(string $notice)
+    protected function formatNotice(string $notice, $data = [])
     {
         // 兼容本地进程执行的情况
         if (Context::has(ServerRequestInterface::class)) {
@@ -243,6 +246,7 @@ class Robot
                 '请求追踪' => Server::getTraceId() . "(" . Client::getIP() . ")",
                 '消息时间' => date('Y-m-d H:i:s'),
                 '消息内容' => $notice,
+                '数据内容' => array_to_json($data),
             ],
             self::MSG_TYPE_NOTICE
         );
@@ -250,9 +254,10 @@ class Robot
 
     /**
      * @param \Throwable $exception
+     * @param array $data
      * @return string
      */
-    protected function formatException(\Throwable $exception)
+    protected function formatException(\Throwable $exception, $data = [])
     {
         $message = $exception->getMessage();
         $file    = $exception->getFile();
@@ -292,6 +297,7 @@ class Robot
             '异常类名' => get_class($exception),
             '异常描述' => $message,
             '参考位置' => sprintf('%s:%d', str_replace([BASE_PATH, '\\'], ['', '/'], $file), $line),
+            '数据内容' => array_to_json($data),
         ];
 
         $trace = $exception->getTraceAsString();

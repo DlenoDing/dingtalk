@@ -6,9 +6,9 @@ use Hyperf\Utils\Str;
 
 /**
  * @method static mixed text($text)
- * @method static mixed notice($notice)
+ * @method static mixed notice(string $notice, array $data)
  * @method static mixed markdown($markdown)
- * @method static mixed exception($exception)
+ * @method static mixed exception(\Throwable $e, array $data)
  *
  * Class Bot
  */
