@@ -233,9 +233,9 @@ class Robot
             $headers    = $this->getHeader($request);
             $headers    = json_encode($headers);
         }
-        $messageBody = [];
+        $messageBody         = [];
         $messageBody['通知消息'] = config('app_name') . "({$this->name})-[" . config('app_env') . "]";
-        $messageBody['主机地址'] = Server::getIpAddr().($isLocal?'(LOCAL)':'(REQUEST)');
+        $messageBody['主机地址'] = Server::getIpAddr() . ($isLocal ? '(LOCAL)' : '(REQUEST)');
         if (!$isLocal) {
             $messageBody['请求地址'] = "[$method]" . $requestUrl;
             $messageBody['请求头部'] = $headers;
@@ -281,9 +281,9 @@ class Robot
             $headers    = json_encode($headers);
         }
 
-        $messageBody = [];
+        $messageBody         = [];
         $messageBody['异常消息'] = config('app_name') . "({$this->name})-[" . config('app_env') . "]";
-        $messageBody['主机地址'] = Server::getIpAddr().($isLocal?'(LOCAL)':'(REQUEST)');
+        $messageBody['主机地址'] = Server::getIpAddr() . ($isLocal ? '(LOCAL)' : '(REQUEST)');
         if (!$isLocal) {
             $messageBody['请求地址'] = "[$method]" . $requestUrl;
             $messageBody['请求头部'] = $headers;
@@ -363,7 +363,12 @@ class Robot
             function (&$val, $key) use (&$i, $msgType) {
                 if ($i <= 0) {
                     $color = $msgType == self::MSG_TYPE_EXCEPTION ? 'f00' : '00f';
-                    $val   = sprintf('#### **<font color=#' . $color . '>%s::</font>** %s> **%s**', $key, PHP_EOL, $val);
+                    $val   = sprintf(
+                        '#### **<font color=#' . $color . '>%s::</font>** %s> **%s**',
+                        $key,
+                        PHP_EOL,
+                        $val
+                    );
                 } else {
                     $val = sprintf('- %s: %s> %s', $key, PHP_EOL, $val);
                 }
@@ -472,14 +477,18 @@ class Robot
     {
         $redis    = get_inject_obj(RedisFactory::class)->get(config('dingtalk.redis', 'default'));
         $cacheKey = $this->getFrequencyRobotCacheKey($robot);
-        $thisNum  = $redis->incr($cacheKey);
-        if ($thisNum <= 1) {
-            $redis->expire($cacheKey, 60);
+        if ($redis->exists($cacheKey)) {
+            $thisNum = $redis->incr($cacheKey);
+            $ttl     = $redis->ttl($cacheKey);
+            if ($ttl <= 0) {
+                $redis->expire($cacheKey, 60);
+            }
+            if ($thisNum > $this->frequencyRobot) {
+                return false;
+            }
+        } else {
+            $redis->set($cacheKey, '1', 60);
         }
-        if ($thisNum > $this->frequencyRobot) {
-            return false;
-        }
-
         return true;
     }
 
