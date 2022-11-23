@@ -120,6 +120,9 @@ class Robot
             }
         }
         $config['configs'] = array_values($config['configs']);
+        if (empty($config['configs'])) {
+            $config['enable'] = false;
+        }
         $this->enable       = $config['enable'] ? true : false;
         $this->name         = $config['name'];
         $this->frequencyMsg = $config['frequency'];
