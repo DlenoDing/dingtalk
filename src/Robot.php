@@ -28,6 +28,8 @@ class Robot
     const MSG_TYPE_NOTICE    = 1;
     const MSG_TYPE_EXCEPTION = 2;
 
+    protected static $robots = [];
+
     /**
      * @var string
      */
@@ -112,6 +114,12 @@ class Robot
         if (!$config['enable']) {
             $this->logger->error(sprintf('[%s] dingtalk is not enable', $configName));
         }
+        foreach ($config['configs'] as $key => $config) {
+            if (empty($config['token']) || empty($config['secret'])) {
+                unset($config['configs'][$key]);
+            }
+        }
+        $config['configs'] = array_values($config['configs']);
         $this->enable       = $config['enable'] ? true : false;
         $this->name         = $config['name'];
         $this->frequencyMsg = $config['frequency'];
@@ -126,7 +134,10 @@ class Robot
     public static function get(string $configName = null)
     {
         $configName = $configName ?: 'default';
-        return make(Robot::class, ['configName' => $configName]);
+        if (!isset(self::$robots[$configName])) {
+            self::$robots[$configName] = make(Robot::class, ['configName' => $configName]);
+        }
+        return self::$robots[$configName];
     }
 
     /**
@@ -481,6 +492,7 @@ class Robot
             $thisNum = $redis->incr($cacheKey);
             $ttl     = $redis->ttl($cacheKey);
             if ($ttl <= 0) {
+                //TODO 极端情况下的兜底处理（exists与incr之间key失效会导致缓存永久有效[线上出现过该情况]）
                 $redis->expire($cacheKey, 60);
             }
             if ($thisNum > $this->frequencyRobot) {
