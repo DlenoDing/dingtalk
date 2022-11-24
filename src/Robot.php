@@ -111,11 +111,11 @@ class Robot
             ];
             unset($config['token'], $config['secret']);
         }
-        if (!$config['enable']) {
+        if (!($config['enable'] ?? false)) {
             $this->logger->error(sprintf('[%s] dingtalk is not enable', $configName));
         }
-        foreach ($config['configs'] as $key => $config) {
-            if (empty($config['token']) || empty($config['secret'])) {
+        foreach ($config['configs'] as $key => $val) {
+            if (empty($val['token']) || empty($val['secret'])) {
                 unset($config['configs'][$key]);
             }
         }
@@ -124,9 +124,9 @@ class Robot
             $config['enable'] = false;
         }
         $this->enable       = $config['enable'] ? true : false;
-        $this->name         = $config['name'];
-        $this->frequencyMsg = $config['frequency'];
-        $this->configs      = $config['configs'];
+        $this->name         = $config['name'] ?? '';
+        $this->frequencyMsg = $config['frequency'] ?? 60;
+        $this->configs      = $config['configs'] ?? [];
         $this->client       = new HttpClient();
     }
 
