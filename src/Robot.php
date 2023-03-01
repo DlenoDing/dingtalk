@@ -150,6 +150,7 @@ class Robot
     public function text(string $text)
     {
         if ($this->checkFrequencyMsg($text)) {
+            $text .= "\r\n请求追踪:" . Server::getTraceId();
             return $this->ding('Text', 'text', $text);
         }
         return false;
@@ -162,6 +163,7 @@ class Robot
     public function markdown(string $markdown)
     {
         if ($this->checkFrequencyMsg($markdown)) {
+            $markdown .= "#### 请求追踪:" . Server::getTraceId();
             return $this->ding('Markdown', 'markdown', $markdown);
         }
         return false;
@@ -254,11 +256,14 @@ class Robot
             $messageBody['请求地址'] = "[$method]" . $requestUrl;
             $messageBody['请求头部'] = $headers;
             $messageBody['请求参数'] = $params;
-            $messageBody['请求追踪'] = Server::getTraceId() . "(" . Client::getIP() . ")";
+            $messageBody['请求IP'] = Client::getIP();
         }
+        $messageBody['请求追踪'] = Server::getTraceId();
         $messageBody['消息时间'] = date('Y-m-d H:i:s');
         $messageBody['消息内容'] = $notice;
-        $messageBody['数据内容'] = array_to_json($data);
+        if (!empty($data)) {
+            $messageBody['数据内容'] = array_to_json($data);
+        }
 
         return $this->formatMessage($messageBody, self::MSG_TYPE_NOTICE);
     }
@@ -302,13 +307,16 @@ class Robot
             $messageBody['请求地址'] = "[$method]" . $requestUrl;
             $messageBody['请求头部'] = $headers;
             $messageBody['请求参数'] = $params;
-            $messageBody['请求追踪'] = Server::getTraceId() . "(" . Client::getIP() . ")";
+            $messageBody['请求IP'] = Client::getIP();
         }
+        $messageBody['请求追踪'] = Server::getTraceId();
         $messageBody['异常时间'] = date('Y-m-d H:i:s');
         $messageBody['异常类名'] = get_class($exception);
         $messageBody['异常描述'] = $message;
         $messageBody['异常位置'] = sprintf('%s:%d', str_replace([BASE_PATH, '\\'], ['', '/'], $file), $line);
-        $messageBody['数据内容'] = array_to_json($data);
+        if (!empty($data)) {
+            $messageBody['数据内容'] = array_to_json($data);
+        }
 
         $trace = $exception->getTraceAsString();
         $trace = str_replace([BASE_PATH, '\\'], ['', '/'], $trace);
