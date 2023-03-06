@@ -150,7 +150,7 @@ class Robot
     public function text(string $text)
     {
         if ($this->checkFrequencyMsg($text)) {
-            $text .= "\r\n请求追踪:" . Server::getTraceId();
+            $text .= "> ** 请求追踪：**" . Server::getTraceId();
             return $this->ding('Text', 'text', $text);
         }
         return false;
@@ -163,7 +163,7 @@ class Robot
     public function markdown(string $markdown)
     {
         if ($this->checkFrequencyMsg($markdown)) {
-            $markdown .= "#### 请求追踪:" . Server::getTraceId();
+            $markdown .= "> ** 请求追踪：**" . Server::getTraceId();
             return $this->ding('Markdown', 'markdown', $markdown);
         }
         return false;
