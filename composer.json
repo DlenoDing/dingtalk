@@ -37,7 +37,11 @@
     },
     "minimum-stability": "dev",
     "prefer-stable": true,
-    "extra": {},
+    "extra": {
+        "hyperf": {
+            "config": "Dleno\\DingTalk\\ConfigProvider"
+        }
+    },
     "bin": [
     ],
     "scripts": {
