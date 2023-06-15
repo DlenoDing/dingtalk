@@ -147,11 +147,11 @@ class Robot
      * @param string $text
      * @return bool
      */
-    public function text(string $text)
+    public function text(string $text, $at = [])
     {
         if ($this->checkFrequencyMsg($text)) {
             $text .= PHP_EOL . "> ** 请求追踪：**" . Server::getTraceId();
-            return $this->ding('Text', 'text', $text);
+            return $this->ding('Text', 'text', $text, $at);
         }
         return false;
     }
@@ -160,11 +160,11 @@ class Robot
      * @param string $markdown
      * @return bool
      */
-    public function markdown(string $markdown)
+    public function markdown(string $markdown, $at = [])
     {
         if ($this->checkFrequencyMsg($markdown)) {
             $markdown .= PHP_EOL . "> ** 请求追踪：**" . Server::getTraceId();
-            return $this->ding('Markdown', 'markdown', $markdown);
+            return $this->ding('Markdown', 'markdown', $markdown, $at);
         }
         return false;
     }
@@ -174,10 +174,10 @@ class Robot
      * @param array $data
      * @return bool
      */
-    public function notice(string $notice, $data = [])
+    public function notice(string $notice, $data = [], $at = [])
     {
         if ($this->checkFrequencyMsg($notice)) {
-            return $this->ding('Notice', 'markdown', $this->formatNotice($notice, $data));
+            return $this->ding('Notice', 'markdown', $this->formatNotice($notice, $data), $at);
         }
         return false;
     }
@@ -187,10 +187,10 @@ class Robot
      * @param array $data
      * @return bool
      */
-    public function exception(\Throwable $e, $data = [])
+    public function exception(\Throwable $e, $data = [], $at = [])
     {
         if ($this->checkFrequencyMsg($e->getMessage())) {
-            return $this->ding('Exception', 'markdown', $this->formatException($e, $data));
+            return $this->ding('Exception', 'markdown', $this->formatException($e, $data), $at);
         }
         return false;
     }
@@ -249,14 +249,14 @@ class Robot
             $headers    = $this->getHeader($request);
             $headers    = json_encode($headers);
         }
-        $messageBody         = [];
+        $messageBody             = [];
         $messageBody['通知消息'] = config('app_name') . "({$this->name})-[" . config('app_env') . "]";
         $messageBody['主机地址'] = Server::getIpAddr() . ($isLocal ? '(LOCAL)' : '(REQUEST)');
         if (!$isLocal) {
             $messageBody['请求地址'] = "[$method]" . $requestUrl;
             $messageBody['请求头部'] = $headers;
             $messageBody['请求参数'] = $params;
-            $messageBody['请求IP'] = Client::getIP();
+            $messageBody['请求IP']   = Client::getIP();
         }
         $messageBody['请求追踪'] = Server::getTraceId();
         $messageBody['消息时间'] = date('Y-m-d H:i:s');
@@ -300,14 +300,14 @@ class Robot
             $headers    = json_encode($headers);
         }
 
-        $messageBody         = [];
+        $messageBody             = [];
         $messageBody['异常消息'] = config('app_name') . "({$this->name})-[" . config('app_env') . "]";
         $messageBody['主机地址'] = Server::getIpAddr() . ($isLocal ? '(LOCAL)' : '(REQUEST)');
         if (!$isLocal) {
             $messageBody['请求地址'] = "[$method]" . $requestUrl;
             $messageBody['请求头部'] = $headers;
             $messageBody['请求参数'] = $params;
-            $messageBody['请求IP'] = Client::getIP();
+            $messageBody['请求IP']   = Client::getIP();
         }
         $messageBody['请求追踪'] = Server::getTraceId();
         $messageBody['异常时间'] = date('Y-m-d H:i:s');
@@ -405,23 +405,32 @@ class Robot
      * @param string $title
      * @param string $type
      * @param string $content
-     * @param string $contentType
+     * @param array $at
      * @return bool
      */
-    protected function ding(string $title, string $type, string $content, string $contentType = 'content')
+    protected function ding(string $title, string $type, string $content, array $at = [])
     {
+        $contentType = 'content';
         if ($type === 'markdown') {
             $contentType = 'text';
         }
-        return $this->sendMessage(
-            [
-                'msgtype' => $type,
-                $type     => [
-                    'title'      => $title,
-                    $contentType => $content,
-                ],
-            ]
-        );
+        $msg = [
+            'msgtype' => $type,
+            $type     => [
+                'title'      => $title,
+                $contentType => $content,
+            ],
+        ];
+        if (!empty($at)) {
+            if (isset($at['atMobiles'])) {
+                $msg['at']['atMobiles'] = is_array($at['atMobiles']) ? $at['atMobiles'] : [$at['atMobiles']];
+            } elseif (isset($at['atUserIds'])) {
+                $msg['at']['atUserIds'] = is_array($at['atUserIds']) ? $at['atUserIds'] : [$at['atUserIds']];
+            } elseif (isset($at['isAtAll'])) {
+                $msg['at']['isAtAll'] = $at['isAtAll'] ? true : false;
+            }
+        }
+        return $this->sendMessage($msg);
     }
 
     /**
