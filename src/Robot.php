@@ -35,6 +35,8 @@ class Robot
     protected static $frequencyRunNum  = [];
     protected static $frequencyRunTime = [];
 
+    protected static $frequencyMsgTime = [];
+
     /**
      * @var string
      */
@@ -213,18 +215,62 @@ class Robot
         if ($this->frequencyMsg <= 0) {
             return true;
         }
-        $redis    = get_inject_obj(RedisFactory::class)->get(config('dingtalk.redis', 'default'));
-        $cacheKey = $this->getFrequencyMsgCacheKey($msg);
-        if ($redis->exists($cacheKey)) {
-            return false;
+        RESTART:
+        if (self::$isCache) {
+            try {
+                $redis    = get_inject_obj(RedisFactory::class)->get(config('dingtalk.redis', 'default'));
+                $cacheKey = $this->getFrequencyMsgCacheKey($msg);
+                if ($redis->exists($cacheKey)) {
+                    return false;
+                }
+                $redis->set($cacheKey, '1', $this->frequencyMsg);
+            } catch (\Throwable $e) {
+                self::$isCache = false;
+                //延时清理内存
+                \Swoole\Timer::after(
+                    10000,
+                    function () {
+                        $this->clearMemory();
+                    }
+                );
+                goto RESTART;
+            }
+        } else {
+            $msgKey = $this->configName . ':' . md5($msg);
+            if (isset(self::$frequencyMsgTime[$msgKey])) {
+                if (self::$frequencyMsgTime[$msgKey] + $this->frequencyMsg < time()) {
+                    unset(self::$frequencyMsgTime[$msgKey]);
+                    goto RESTART;
+                } else {
+                    return false;
+                }
+            } else {
+                self::$frequencyMsgTime[$msgKey] = time();
+            }
         }
-        $redis->set($cacheKey, '1', $this->frequencyMsg);
         return true;
     }
 
     protected function getFrequencyMsgCacheKey($msg)
     {
         return self::FREQUENCY_MSG_CACHE_KEY . $this->configName . ':' . md5($msg);
+    }
+
+    protected function clearMemory()
+    {
+        //将已过期的清理掉，避免长期占用内存
+        foreach (self::$frequencyMsgTime as $k => $v) {
+            if ($v + $this->frequencyMsg < time()) {
+                unset(self::$frequencyMsgTime[$k]);
+            }
+        }
+        //延时继续清理
+        \Swoole\Timer::after(
+            10000,
+            function () {
+                $this->clearMemory();
+            }
+        );
     }
 
     /**
