@@ -30,6 +30,11 @@ class Robot
 
     protected static $robots = [];
 
+    protected static $isCache = true;
+
+    protected static $frequencyRunNum  = [];
+    protected static $frequencyRunTime = [];
+
     /**
      * @var string
      */
@@ -506,21 +511,44 @@ class Robot
      */
     protected function checkFrequencyRobot($robot)
     {
-        $redis    = get_inject_obj(RedisFactory::class)->get(config('dingtalk.redis', 'default'));
-        $cacheKey = $this->getFrequencyRobotCacheKey($robot);
-        if ($redis->exists($cacheKey)) {
-            $thisNum = $redis->incr($cacheKey);
-            $ttl     = $redis->ttl($cacheKey);
-            if ($ttl <= 0) {
-                //TODO 极端情况下的兜底处理（exists与incr之间key失效会导致缓存永久有效[线上出现过该情况]）
-                $redis->expire($cacheKey, 60);
-            }
-            if ($thisNum > $this->frequencyRobot) {
-                return false;
+        RESTART:
+        if (self::$isCache) {
+            try {
+                $redis    = get_inject_obj(RedisFactory::class)->get(config('dingtalk.redis', 'default'));
+                $cacheKey = $this->getFrequencyRobotCacheKey($robot);
+                if ($redis->exists($cacheKey)) {
+                    $thisNum = $redis->incr($cacheKey);
+                    $ttl     = $redis->ttl($cacheKey);
+                    if ($ttl <= 0) {
+                        //TODO 极端情况下的兜底处理（exists与incr之间key失效会导致缓存永久有效）
+                        $redis->expire($cacheKey, 60);
+                    }
+                    if ($thisNum > $this->frequencyRobot) {
+                        return false;
+                    }
+                } else {
+                    $redis->set($cacheKey, '1', 60);
+                }
+            } catch (\Throwable $e) {
+                self::$isCache = false;
+                goto RESTART;
             }
         } else {
-            $redis->set($cacheKey, '1', 60);
+            if (isset(self::$frequencyRunNum[$robot])) {
+                if (self::$frequencyRunTime[$robot] + 60 < time()) {
+                    unset(self::$frequencyRunNum[$robot], self::$frequencyRunTime[$robot]);
+                    goto RESTART;
+                }
+                self::$frequencyRunNum[$robot]++;
+                if (self::$frequencyRunNum[$robot] > $this->frequencyRobot) {
+                    return false;
+                }
+            } else {
+                self::$frequencyRunNum[$robot]  = 1;
+                self::$frequencyRunTime[$robot] = time();
+            }
         }
+
         return true;
     }
 
