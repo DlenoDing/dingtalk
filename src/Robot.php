@@ -97,7 +97,8 @@ class Robot
         $this->logger = ApplicationContext::getContainer()
                                           ->get(StdoutLoggerInterface::class);
 
-        $this->configName = $configName;
+        $this->configName     = $configName;
+        $this->frequencyRobot = config('dingtalk.frequency', $this->frequencyRobot);
 
         $config = config('dingtalk.configs.' . $configName);
         if (empty($config)) {
@@ -521,6 +522,7 @@ class Robot
         $result    = json_decode($response->getBody(), true);
         if (!isset($result['errcode']) || $result['errcode']) {
             $this->logger->error('DingTalk Send Fail:' . array_to_json($result));
+            $this->logger->error('DingTalk Send Data:' . array_to_json($msg));
         }
     }
 
@@ -562,18 +564,14 @@ class Robot
             try {
                 $redis    = get_inject_obj(RedisFactory::class)->get(config('dingtalk.redis', 'default'));
                 $cacheKey = $this->getFrequencyRobotCacheKey($robot);
-                if ($redis->exists($cacheKey)) {
-                    $thisNum = $redis->incr($cacheKey);
-                    $ttl     = $redis->ttl($cacheKey);
-                    if ($ttl <= 0) {
-                        //TODO 极端情况下的兜底处理（exists与incr之间key失效会导致缓存永久有效）
-                        $redis->expire($cacheKey, 60);
-                    }
-                    if ($thisNum > $this->frequencyRobot) {
-                        return false;
-                    }
-                } else {
-                    $redis->set($cacheKey, '1', 60);
+                $thisNum  = $redis->incr($cacheKey);
+                $ttl      = $redis->ttl($cacheKey);
+                if ($ttl <= 0) {
+                    //TODO 极端情况下的兜底处理（exists与incr之间key失效会导致缓存永久有效）
+                    $redis->expire($cacheKey, 60);
+                }
+                if ($thisNum > $this->frequencyRobot) {
+                    return false;
                 }
             } catch (\Throwable $e) {
                 self::$isCache = false;
