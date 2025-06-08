@@ -297,9 +297,9 @@ class Robot
         } else {
             $requestUrl = $request->getUri();
             $method     = $request->getMethod();
-            $params     = json_encode($request->all());
+            $params     = array_to_json($request->all());
             $headers    = $this->getHeader($request);
-            $headers    = json_encode($headers);
+            $headers    = array_to_json($headers);
         }
         $messageBody             = [];
         $messageBody['通知消息'] = config('app_name') . "({$this->name})-[" . config('app_env') . "]";
@@ -347,9 +347,9 @@ class Robot
         } else {
             $requestUrl = $request->getUri();
             $method     = $request->getMethod();
-            $params     = json_encode($request->all());
+            $params     = array_to_json($request->all());
             $headers    = $this->getHeader($request);
-            $headers    = json_encode($headers);
+            $headers    = array_to_json($headers);
         }
 
         $messageBody             = [];
