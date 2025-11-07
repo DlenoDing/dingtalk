@@ -2,7 +2,8 @@
 
 namespace Dleno\DingTalk;
 
-use Hyperf\Utils\Str;
+
+use Hyperf\Stringable\Str;
 
 /**
  * @method static mixed text($text)
@@ -38,7 +39,7 @@ abstract class BaseBot
      * @return mixed
      * @throws \Exception
      */
-    public function __call(string $method, array $params)
+    public function __call($method, $params)
     {
         if (!in_array($method, $this->getValidMethods())) {
             throw new \Exception('call to undefined method ' . $method);
@@ -80,9 +81,14 @@ abstract class BaseBot
      * @param array $params
      *
      * @return mixed
+     * @throws \Exception
      */
-    public static function __callStatic(string $method, array $params)
+    public static function __callStatic($method, $params)
     {
-        return (new static())->$method(...$params);
+        $instance = new static();
+        if (!in_array($method, $instance->getValidMethods())) {
+            throw new \Exception('call to undefined method ' . $method);
+        }
+        return $instance->$method(...$params);
     }
 }

@@ -9,10 +9,15 @@ use Hyperf\Context\Context;
 use Hyperf\Contract\StdoutLoggerInterface;
 use Hyperf\HttpServer\Contract\RequestInterface;
 use Hyperf\Redis\RedisFactory;
-use Hyperf\Utils\ApplicationContext;
+use Hyperf\Context\ApplicationContext;
 use Hyperf\Utils\Coroutine;
 use Hyperf\WebSocketServer\Context as WsContext;
 use Psr\Http\Message\ServerRequestInterface;
+
+use function Hyperf\Config\config;
+use function Hyperf\Coroutine\go;
+use function Hyperf\Coroutine\run;
+use function Hyperf\Support\make;
 
 /**
  * Class Robot
@@ -111,7 +116,6 @@ class Robot
                 'secret'    => '',
             ];
         }
-
         if (!isset($config['configs'])) {
             $config['configs'][] = [
                 'token'  => $config['token'],
