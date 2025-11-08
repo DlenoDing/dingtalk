@@ -10,7 +10,7 @@ use Hyperf\Contract\StdoutLoggerInterface;
 use Hyperf\HttpServer\Contract\RequestInterface;
 use Hyperf\Redis\RedisFactory;
 use Hyperf\Context\ApplicationContext;
-use Hyperf\Utils\Coroutine;
+use Hyperf\Coroutine\Coroutine;
 use Hyperf\WebSocketServer\Context as WsContext;
 use Psr\Http\Message\ServerRequestInterface;
 
