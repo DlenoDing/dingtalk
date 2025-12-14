@@ -146,7 +146,7 @@ class Robot
      * @param string $configName
      * @return Robot
      */
-    public static function get(string $configName = null)
+    public static function get(?string $configName = null)
     {
         $configName = $configName ?: 'default';
         if (!isset(self::$robots[$configName])) {
