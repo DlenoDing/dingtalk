@@ -19,3 +19,14 @@ return [
     ],
 ];
 ```
+
+## 发布
+
+推送 `v*` tag 后，GitHub Actions 会自动创建 GitHub Release，并自动生成发布说明；同名 Release 已存在时跳过。Composer 包版本仍由 Git tag 决定，Packagist 自动收录。
+
+```bash
+git tag v3.1.5
+git push origin v3.1.5
+```
+
+仅推送 `main` 不会自动生成版本号或触发 Release。本工作流不额外上传构建产物，源码 ZIP 由 GitHub 提供。
