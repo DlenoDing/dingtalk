@@ -33,6 +33,11 @@ class Robot
     const MSG_TYPE_NOTICE    = 1;
     const MSG_TYPE_EXCEPTION = 2;
 
+    //异常消息去重方式：按异常消息原文（默认，兼容旧行为）
+    const EXCEPTION_DEDUP_MESSAGE = 'message';
+    //异常消息去重方式：按异常指纹（异常类 + code + 出错位置 + 去除变量后的消息）
+    const EXCEPTION_DEDUP_FINGERPRINT = 'fingerprint';
+
     protected static $robots = [];
 
     protected static $isCache = true;
@@ -94,6 +99,12 @@ class Robot
     protected $frequencyMsg;
 
     /**
+     * 异常消息去重方式（message|fingerprint）
+     * @var string
+     */
+    protected $exceptionDedup = self::EXCEPTION_DEDUP_MESSAGE;
+
+    /**
      * construct
      * @param string $configName
      */
@@ -138,6 +149,8 @@ class Robot
         $this->enable       = $config['enable'] ? true : false;
         $this->name         = $config['name'] ?? '';
         $this->frequencyMsg = $config['frequency'] ?? 60;
+        //分组配置优先，其次全局配置，默认按消息原文
+        $this->exceptionDedup = (string)($config['exception_dedup'] ?? config('dingtalk.exception_dedup', self::EXCEPTION_DEDUP_MESSAGE));
         $this->configs      = $config['configs'] ?? [];
         $this->client       = new HttpClient();
     }
@@ -201,7 +214,7 @@ class Robot
      */
     public function exception(\Throwable $e, $data = [], $at = [])
     {
-        if ($this->checkFrequencyMsg($e->getMessage())) {
+        if ($this->checkFrequencyMsg($this->getExceptionFrequencyText($e))) {
             return $this->ding('Exception', 'markdown', $this->formatException($e, $data), $at);
         }
         return false;
@@ -254,6 +267,43 @@ class Robot
             }
         }
         return true;
+    }
+
+    /**
+     * 异常去重文本
+     * message：异常消息原文（旧行为）；
+     * fingerprint：异常类 + code + 出错位置 + 去除变量（数字、引号内容、长十六进制串）后的消息，
+     * 同一处抛出、仅变量不同的异常（如带绑定值的 SQL、带耗时的网络错误）在去重窗口内只上报一次。
+     * @param \Throwable $e
+     * @return string
+     */
+    protected function getExceptionFrequencyText(\Throwable $e)
+    {
+        if ($this->exceptionDedup !== self::EXCEPTION_DEDUP_FINGERPRINT) {
+            return $e->getMessage();
+        }
+
+        return 'exception:' . get_class($e) . '|' . $e->getCode() . '|' . $e->getFile() . ':' . $e->getLine() . '|'
+            . self::normalizeMessage($e->getMessage());
+    }
+
+    /**
+     * 去除消息中的变量部分，用于生成去重指纹
+     * @param string $message
+     * @return string
+     */
+    public static function normalizeMessage(string $message)
+    {
+        $normalized = preg_replace([
+            '/\'(?:[^\'\\\\]|\\\\.)*\'/su',   //单引号内容
+            '/"(?:[^"\\\\]|\\\\.)*"/su',        //双引号内容
+            '/\b(?:0x)?[0-9a-f]{16,}\b/iu',     //长十六进制串（hash、uuid 片段、token）
+            '/\d+(?:\.\d+)?/u',               //数字（id、金额、耗时、时间）
+            '/\s+/u',                          //空白
+        ], ['?', '?', '#', '#', ' '], $message);
+
+        //非法 UTF-8 等导致正则失败时保留原文，不把不同异常归为同一指纹
+        return $normalized === null ? $message : trim($normalized);
     }
 
     protected function getFrequencyMsgCacheKey($msg)
