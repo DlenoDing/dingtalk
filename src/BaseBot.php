@@ -12,6 +12,7 @@ use Hyperf\Stringable\Str;
  * @method static mixed exception(\Throwable $e, array $data)
  *
  * Class Bot
+ * @phpstan-consistent-constructor __callStatic 内 new static(),子类构造须保持无参
  */
 abstract class BaseBot
 {
